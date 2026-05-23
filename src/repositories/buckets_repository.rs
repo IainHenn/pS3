@@ -1,9 +1,10 @@
 use crate::models::bucket::Bucket;
+use crate::models::bucket::BucketUpdateModel;
 
-pub async fn create_bucket(pool: &PgPool, bucketModel: Bucket) -> Result<Bucket, sqlx::Error>{
+pub async fn create_bucket(pool: &PgPool, bucket: Bucket) -> Result<Bucket, sqlx::Error>{
     sqlx::query_as!(Bucket, "INSERT INTO public.buckets VALUES ($1,$2) RETURNING *")
-    .bind(bucketModel.name)
-    .bind(bucketModel.created_at)
+    .bind(bucket.name)
+    .bind(bucket.created_at)
     .fetch_one(pool)
     .await;
 }
@@ -17,18 +18,28 @@ pub async fn get_bucket(pool: &PgPool, bucket_id: String) -> Result<Bucket, sqlx
 
 pub async fn get_buckets(pool: &PgPool, bucket_ids: Vec<Uuid>) -> Result<Vec<Bucket>, sqlx::Error>{
     sqlx::query_as!(Bucket, 
-        r#"SELECT * FROM public.buckets WHERE id = ANY($1)"#
+        r#"SELECT * FROM public.buckets WHERE id = ANY($1)"#,
         &buckets_ids[..] as &[Uuid]
     )
-    .bind(bucket_ids_str)
     .fetch_all(pool)
     .await;
 }
 
-pub async fn update_bucket(pool: &PgPool, bucket_id: Uuid) Result<Bucket, sqlx::Error>{
-    sqlx::query_as!(Bucket, "UPDATE public.bucket WHERE id = $1 RETURNING *")
-    .bind(bucket_id)
-    .fetch_one(pool)
+pub async fn update_bucket(pool: &PgPool, bucket_id: Uuid, bucket_update: BucketUpdateModel) -> Result<Bucket, sqlx::Error>{
+    let mut qb = sqlx::QueryBuilder::new("UPDATE public.buckets SET");
+    let mut separated = qb.separated(", ");
+
+    if let Some(name) = update.name {
+        separated.push("name = ");
+        separated.push_bind_unseparated(name);
+    }
+    
+    qb.push("WHERE id = ");
+    qb.push_bind_unseparated(bucket_id);
+    qb.push("RETURNING *");
+
+    qb.build_query_as::<Bucket>()
+    .fetch_one()
     .await;
 }
 
