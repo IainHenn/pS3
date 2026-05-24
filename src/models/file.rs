@@ -12,9 +12,9 @@ pub struct File {
 }
 
 pub struct FileUpdateModel {
-    pub bucket_id: String,
-    pub name: String,
-    pub mime_type: String,
-    pub size: i32,
-    pub path: String,
+    pub bucket_id: Option<String>,
+    pub name: Option<String>,
+    pub mime_type: Option<String>,
+    pub size: Option<i32>,
+    pub path: Option<String>,
 }
