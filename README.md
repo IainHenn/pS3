@@ -1,6 +1,6 @@
 # pS3
 
-Personal S3 — Rust API backed by PostgreSQL.
+Personal S3 — Rust service backed by PostgreSQL. Used for interacting with buckets as folders, with blobs/files inside (flattened).
 
 ## Prerequisites
 
