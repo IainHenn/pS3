@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, IntoResponseParts};
+use axum::response::{IntoResponse};
 use uuid::Uuid;
 use crate::models::bucket::{Bucket, BucketUpdateModel};
 use crate::repositories::buckets_repository as bucket;
