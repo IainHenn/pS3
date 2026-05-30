@@ -1,13 +1,14 @@
-use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse};
-use uuid::Uuid;
-use crate::models::file::{File, FileUpdateModel};
-use crate::repositories::files_repository as file;
+use axum::response::IntoResponse;
+use axum::Json;
 use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
+use crate::repositories::files_repository as file;
 
 pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
-    let res: Result<File, sqlx::Error> = file::get_file(&pg_pool, bucket_id, file_id).await;
+    let res: Result<ViewFile, sqlx::Error> = file::get_file(&pg_pool, bucket_id, file_id).await;
 
     match res {
         Ok(file) => (StatusCode::OK, Json(file)).into_response(),
@@ -16,7 +17,8 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
 }
 
 pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
-    let res: Result<Vec<File>, sqlx::Error> = file::get_files(&pg_pool, bucket_id, file_ids).await;
+    let res: Result<Vec<ViewFile>, sqlx::Error> =
+        file::get_files(&pg_pool, bucket_id, file_ids).await;
 
     match res {
         Ok(files) => (StatusCode::OK, Json(files)).into_response(),
@@ -24,8 +26,8 @@ pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) ->
     }
 }
 
-pub async fn create_file(pg_pool: PgPool, bucket_id: Uuid, file: File) -> impl IntoResponse {
-    let res: Result<File, sqlx::Error> = file::create_file(&pg_pool, bucket_id, file).await;
+pub async fn create_file(pg_pool: PgPool, bucket_id: Uuid, create: CreateFile) -> impl IntoResponse {
+    let res: Result<ViewFile, sqlx::Error> = file::create_file(&pg_pool, bucket_id, create).await;
 
     match res {
         Ok(file) => (StatusCode::OK, Json(file)).into_response(),
@@ -33,8 +35,14 @@ pub async fn create_file(pg_pool: PgPool, bucket_id: Uuid, file: File) -> impl I
     }
 }
 
-pub async fn update_file(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid, file_update: FileUpdateModel) -> impl IntoResponse {
-    let res: Result<File, sqlx::Error> = file::update_file(&pg_pool, bucket_id, file_id, file_update).await;
+pub async fn update_file(
+    pg_pool: PgPool,
+    bucket_id: Uuid,
+    file_id: Uuid,
+    file_update: FileUpdateModel,
+) -> impl IntoResponse {
+    let res: Result<ViewFile, sqlx::Error> =
+        file::update_file(&pg_pool, bucket_id, file_id, file_update).await;
 
     match res {
         Ok(file) => (StatusCode::OK, Json(file)).into_response(),

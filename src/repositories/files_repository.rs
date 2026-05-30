@@ -1,30 +1,37 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::file::File;
-use crate::models::file::FileUpdateModel;
+use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
 
-pub async fn create_file(pool: &PgPool, bucket_id: Uuid, file: File) -> Result<File, sqlx::Error> {
+pub async fn create_file(
+    pool: &PgPool,
+    bucket_id: Uuid,
+    create: CreateFile,
+) -> Result<ViewFile, sqlx::Error> {
     sqlx::query_as!(
-        File,
+        ViewFile,
         r#"
         INSERT INTO files (bucket_id, name, mime_type, size, path)
         VALUES ($1, $2, $3, $4, $5)
         RETURNING id, bucket_id, name, mime_type, size, path, created_at, updated_at
         "#,
         bucket_id,
-        file.name,
-        file.mime_type,
-        file.size,
-        file.path,
+        create.name,
+        create.mime_type,
+        create.size,
+        create.path,
     )
     .fetch_one(pool)
     .await
 }
 
-pub async fn get_file(pool: &PgPool, bucket_id: Uuid, file_id: Uuid) -> Result<File, sqlx::Error> {
+pub async fn get_file(
+    pool: &PgPool,
+    bucket_id: Uuid,
+    file_id: Uuid,
+) -> Result<ViewFile, sqlx::Error> {
     sqlx::query_as!(
-        File,
+        ViewFile,
         r#"
         SELECT id, bucket_id, name, mime_type, size, path, created_at, updated_at
         FROM files
@@ -41,9 +48,9 @@ pub async fn get_files(
     pool: &PgPool,
     bucket_id: Uuid,
     file_ids: Vec<Uuid>,
-) -> Result<Vec<File>, sqlx::Error> {
+) -> Result<Vec<ViewFile>, sqlx::Error> {
     sqlx::query_as!(
-        File,
+        ViewFile,
         r#"
         SELECT id, bucket_id, name, mime_type, size, path, created_at, updated_at
         FROM files
@@ -61,7 +68,7 @@ pub async fn update_file(
     bucket_id: Uuid,
     file_id: Uuid,
     file_update: FileUpdateModel,
-) -> Result<File, sqlx::Error> {
+) -> Result<ViewFile, sqlx::Error> {
     let mut qb = sqlx::QueryBuilder::new("UPDATE files SET ");
     let mut separated = qb.separated(", ");
 
@@ -92,7 +99,7 @@ pub async fn update_file(
     qb.push_bind(bucket_id);
     qb.push(" RETURNING id, bucket_id, name, mime_type, size, path, created_at, updated_at");
 
-    qb.build_query_as::<File>().fetch_one(pool).await
+    qb.build_query_as::<ViewFile>().fetch_one(pool).await
 }
 
 pub async fn delete_file(

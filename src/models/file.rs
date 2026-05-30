@@ -1,17 +1,25 @@
-use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateFile {
+    pub name: String,
+    pub mime_type: String,
+    pub size: i64,
+    pub path: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct File {
+pub struct ViewFile {
     pub id: Uuid,
-    pub bucket_id: String,
+    pub bucket_id: Uuid,
     pub name: String,
     pub mime_type: String,
     pub size: i64,
     pub path: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -2,8 +2,13 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateBucket {
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Bucket {
+pub struct ViewBucket {
     pub id: Uuid,
     pub name: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
