@@ -1,5 +1,6 @@
 mod config;
 mod controllers;
+mod lib;
 mod models;
 mod repositories;
 mod router;

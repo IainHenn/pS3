@@ -5,6 +5,7 @@ pub struct Config {
     pub database_url: String,
     pub host: String,
     pub port: u16,
+    pub buckets_home_path: String,
 }
 
 impl Config {
@@ -31,10 +32,13 @@ impl Config {
             .parse()
             .expect("API_PORT must be a valid number");
 
+        let buckets_home_path = env::var("BUCKETS_HOME_PATH").unwrap_or_else(|_| "/c/Home".to_string());
+
         Self {
             database_url,
             host,
             port,
+            buckets_home_path
         }
     }
 }

@@ -1,11 +1,18 @@
-use axum::extract::{Json, Path, Query, State};
+use axum::extract::{Json, Multipart, Path, Query, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
+use std::collections::HashMap;
+use axum::body::Bytes;
 
 use crate::models::file::{CreateFile, FileUpdateModel};
 use crate::services::files_service as file;
+
+use crate::config::Config;
+use crate::lib::file_actions;
+
 
 #[derive(Deserialize)]
 pub struct BucketFilePath {
@@ -42,10 +49,11 @@ pub async fn get_files(
 pub async fn create_file(
     State(pool): State<PgPool>,
     Path(bucket_id): Path<Uuid>,
-    Json(create): Json<CreateFile>,
+    multipart: Multipart,
 ) -> impl IntoResponse {
-    file::create_file(pool, bucket_id, create).await
+    file::create_file(pool, bucket_id, multipart).await
 }
+
 
 pub async fn update_file(
     State(pool): State<PgPool>,
