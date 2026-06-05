@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::extract::Multipart;
+use axum::extract::{Multipart};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -39,8 +39,8 @@ pub async fn create_file(
     let config = Config::from_env();
     let mut file_name = String::new();
     let mut content_type = String::new();
-    let mut size = 0;
-    let mut bytes = Bytes::New();
+    let size = 0;
+    let mut bytes = Bytes::new();
 
     while let Ok(Some(field)) = multipart.next_field().await {
         
@@ -70,11 +70,11 @@ pub async fn create_file(
 
     match res {
         Ok(file) => {
-            let map: HashMap<&String, &Bytes> = HashMap::from([
-                (&file.id.to_string(), &bytes)
+            let map: HashMap<String, Bytes> = HashMap::from([
+                (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
             ]);
             
-            let (_, failed_files) = file_actions::create_files(map).await;
+            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
             
             if failed_files.len() > 0 {
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -91,57 +91,124 @@ pub async fn update_file(
     pg_pool: PgPool,
     bucket_id: Uuid,
     file_id: Uuid,
-    file_update: FileUpdateModel,
+    mut multipart: Multipart,
 ) -> impl IntoResponse {
+    let config = Config::from_env();
+    let mut file_name = String::new();
+    let mut content_type = String::new();
+    let mut bytes = Bytes::new();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        
+        if let Some(name) = field.file_name(){
+            file_name = name.to_string();
+        }
+
+        if let Some(mime) = field.content_type(){
+            content_type = mime.to_string();
+        }
+
+        let Ok(file_size) = field.bytes().await else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        };
+
+        bytes = file_size;
+    };
+
+    let file_size = bytes.len() as i64;
+
+    let file_update: FileUpdateModel = FileUpdateModel {
+        bucket_id: Some(bucket_id.to_string()),
+        name: Some(file_name),
+        mime_type: Some(content_type),
+        path: Some(format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name)),
+        size: Some(file_size),
+    };
+
+    let new_size = file_update.size;
+    let new_mime_type = file_update.mime_type.clone();
+
     let res: Result<ViewFile, sqlx::Error> =
-        file::update_file(&pg_pool, bucket_id, file_id, file_update).await;
+        file::update_file(&pg_pool, bucket_id, file_id, &file_update).await;
 
     match res {
-        Ok(file) => (StatusCode::OK, Json(file)).into_response(),
+        Ok(file) => {
+
+            // This just means the file itself changed 
+            if new_mime_type != Some(file.mime_type.clone()) || 
+            new_size != Some(file.size.clone())
+            {
+               let map: HashMap<String, Bytes> = HashMap::from([
+                    (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
+                ]);
+
+                let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
+
+                if failed_files.len() > 0 {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    // Need to call a rollback here for the database!
+                } else {
+                    return (StatusCode::OK, Json(file)).into_response();
+                }
+            }
+
+            // This means the bucket changed, and in this case we move the file
+            else if bucket_id != file.bucket_id {
+                file_actions::move_file(&format!("{}/{}", file.bucket_id, file.id.to_string()), &format!("{}/{}", bucket_id, file.id.to_string()));
+            }
+            return (StatusCode::OK, Json(file)).into_response();
+        },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
 pub async fn delete_file(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
     let config = Config::from_env();
+    let files_to_delete = HashMap::from([(
+        file_id.to_string(),
+        format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_id),
+    )]);
+
     let res: Result<Uuid, sqlx::Error> = file::delete_file(&pg_pool, bucket_id, file_id).await;
-    let file_to_delete = HashMap::from([
-        (file_id, format!("{}/{}/{}", &config.buckets_home_path, bucket_id, file_id))
-        ])
 
     match res {
-        Ok(file_id) => {
-            let (_, failed_deletes) = file_actions::delete_files(files_to_delete);
+        Ok(deleted_id) => {
+            let (_, failed_deletes) = file_actions::delete_files(files_to_delete).await;
 
-            if failed_deletes.len() > 0 {
+            if !failed_deletes.is_empty() {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
 
-            return (StatusCode::OK, Json(file_id)).into_response();
-        };
+            (StatusCode::OK, Json(deleted_id)).into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
 pub async fn delete_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
     let config = Config::from_env();
-    let files_to_delete = HashMap::New();
+    let mut files_to_delete = HashMap::new();
 
-    for id in file_ids {
-        files_to_delete.insert(id, format("{}/{}/{}", &config.buckets_home_path, bucket_id, id));
+    for id in &file_ids {
+        files_to_delete.insert(
+            id.to_string(),
+            format!("{}/{}/{}", config.buckets_home_path, bucket_id, id),
+        );
     }
+
     let res: Result<Vec<Uuid>, sqlx::Error> =
         file::delete_files(&pg_pool, bucket_id, file_ids).await;
 
     match res {
-        Ok(file_ids) => {
-            let (successful_deletes, failed_deletes) = file_actions::delete_files(files_to_delete);
+        Ok(deleted_ids) => {
+            let (_, failed_deletes) = file_actions::delete_files(files_to_delete).await;
 
-            if failed_deletes.len() > 0 {
+            if !failed_deletes.is_empty() {
                 return StatusCode::INTERNAL_SERVER_ERROR.into_response();
             }
-            return (StatusCode::OK, Json(file_ids)).into_response();
-        },
+
+            (StatusCode::OK, Json(deleted_ids)).into_response()
+        }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

@@ -67,20 +67,20 @@ pub async fn update_file(
     pool: &PgPool,
     bucket_id: Uuid,
     file_id: Uuid,
-    file_update: FileUpdateModel,
+    file_update: &FileUpdateModel,
 ) -> Result<ViewFile, sqlx::Error> {
     let mut qb = sqlx::QueryBuilder::new("UPDATE files SET ");
     let mut separated = qb.separated(", ");
 
-    if let Some(name) = file_update.name {
+    if let Some(name) = &file_update.name {
         separated.push("name = ");
         separated.push_bind(name);
     }
-    if let Some(bucket_id_update) = file_update.bucket_id {
+    if let Some(bucket_id_update) = &file_update.bucket_id {
         separated.push("bucket_id = ");
         separated.push_bind(bucket_id_update);
     }
-    if let Some(mime_type) = file_update.mime_type {
+    if let Some(mime_type) = &file_update.mime_type {
         separated.push("mime_type = ");
         separated.push_bind(mime_type);
     }
@@ -88,7 +88,7 @@ pub async fn update_file(
         separated.push("size = ");
         separated.push_bind(size);
     }
-    if let Some(path) = file_update.path {
+    if let Some(path) = &file_update.path {
         separated.push("path = ");
         separated.push_bind(path);
     }
