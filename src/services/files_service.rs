@@ -1,5 +1,5 @@
 use axum::body::Bytes;
-use axum::extract::Multipart;
+use axum::extract::{Multipart};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
@@ -71,10 +71,10 @@ pub async fn create_file(
     match res {
         Ok(file) => {
             let map: HashMap<String, Bytes> = HashMap::from([
-                (file.id.to_string(), bytes)
+                (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
             ]);
             
-            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_files(&map).await;
+            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
             
             if failed_files.len() > 0 {
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()
@@ -91,13 +91,73 @@ pub async fn update_file(
     pg_pool: PgPool,
     bucket_id: Uuid,
     file_id: Uuid,
-    file_update: FileUpdateModel,
+    mut multipart: Multipart,
 ) -> impl IntoResponse {
+    let config = Config::from_env();
+    let mut file_name = String::new();
+    let mut content_type = String::new();
+    let mut bytes = Bytes::new();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        
+        if let Some(name) = field.file_name(){
+            file_name = name.to_string();
+        }
+
+        if let Some(mime) = field.content_type(){
+            content_type = mime.to_string();
+        }
+
+        let Ok(file_size) = field.bytes().await else {
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        };
+
+        bytes = file_size;
+    };
+
+    let file_size = bytes.len() as i64;
+
+    let file_update: FileUpdateModel = FileUpdateModel {
+        bucket_id: Some(bucket_id.to_string()),
+        name: Some(file_name),
+        mime_type: Some(content_type),
+        path: Some(format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name)),
+        size: Some(file_size),
+    };
+
+    let new_size = file_update.size;
+    let new_mime_type = file_update.mime_type.clone();
+
     let res: Result<ViewFile, sqlx::Error> =
-        file::update_file(&pg_pool, bucket_id, file_id, file_update).await;
+        file::update_file(&pg_pool, bucket_id, file_id, &file_update).await;
 
     match res {
-        Ok(file) => (StatusCode::OK, Json(file)).into_response(),
+        Ok(file) => {
+
+            // This just means the file itself changed 
+            if new_mime_type != Some(file.mime_type.clone()) || 
+            new_size != Some(file.size.clone())
+            {
+               let map: HashMap<String, Bytes> = HashMap::from([
+                    (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
+                ]);
+
+                let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
+
+                if failed_files.len() > 0 {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    // Need to call a rollback here for the database!
+                } else {
+                    return (StatusCode::OK, Json(file)).into_response();
+                }
+            }
+
+            // This means the bucket changed, and in this case we move the file
+            else if bucket_id != file.bucket_id {
+                file_actions::move_file(&format!("{}/{}", file.bucket_id, file.id.to_string()), &format!("{}/{}", bucket_id, file.id.to_string()));
+            }
+            return (StatusCode::OK, Json(file)).into_response();
+        },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

@@ -52,9 +52,10 @@ pub async fn create_file(
 pub async fn update_file(
     State(pool): State<PgPool>,
     Path(path): Path<BucketFilePath>,
-    Json(file_update): Json<FileUpdateModel>,
+    multipart: Multipart,
 ) -> impl IntoResponse {
-    file::update_file(pool, path.bucket_id, path.file_id, file_update).await
+
+    file::update_file(pool, path.bucket_id, path.file_id, multipart).await
 }
 
 pub async fn delete_file(
