@@ -1,17 +1,11 @@
 use axum::extract::{Json, Multipart, Path, Query, State};
-use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
-use std::collections::HashMap;
-use axum::body::Bytes;
 
-use crate::models::file::{CreateFile, FileUpdateModel};
+use crate::models::file::{FileUpdateModel};
 use crate::services::files_service as file;
-
-use crate::config::Config;
-use crate::lib::file_actions;
 
 
 #[derive(Deserialize)]

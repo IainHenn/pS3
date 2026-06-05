@@ -39,8 +39,8 @@ pub async fn create_file(
     let config = Config::from_env();
     let mut file_name = String::new();
     let mut content_type = String::new();
-    let mut size = 0;
-    let mut bytes = Bytes::New();
+    let size = 0;
+    let mut bytes = Bytes::new();
 
     while let Ok(Some(field)) = multipart.next_field().await {
         
@@ -59,8 +59,6 @@ pub async fn create_file(
         bytes = file_size;
     };
 
-    let temp_str: &str = "";
-
     let create: CreateFile = CreateFile {
         mime_type: content_type,
         path: format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name),
@@ -72,11 +70,11 @@ pub async fn create_file(
 
     match res {
         Ok(file) => {
-            let map: HashMap<&String, &Bytes> = HashMap::from([
-                (&file.id.to_string(), &bytes)
+            let map: HashMap<String, Bytes> = HashMap::from([
+                (file.id.to_string(), bytes)
             ]);
             
-            let (_, failed_files) = file_actions::create_files(map).await;
+            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_files(&map).await;
             
             if failed_files.len() > 0 {
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()

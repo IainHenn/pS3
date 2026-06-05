@@ -10,9 +10,10 @@ use tokio::fs;
 // Takes in vector of file structs
 // Outputs the vector of file structs with newly updated paths
 
-pub async fn create_files(file_map: HashMap<&String, &Bytes>) -> (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) {
-    let succeeded_file_map: HashMap<&String, &Bytes> = HashMap::new();
-    let failed_file_map: HashMap<&String, &Bytes> = HashMap::new();
+pub async fn create_files(file_map: &HashMap<String, Bytes>) -> (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>
+) {
+    let mut succeeded_file_map: HashMap<&String, &Bytes> = HashMap::new();
+    let mut failed_file_map: HashMap<&String, &Bytes> = HashMap::new();
     
     for (path, bytes) in file_map {
         match fs::write(path, bytes).await {
@@ -22,9 +23,12 @@ pub async fn create_files(file_map: HashMap<&String, &Bytes>) -> (HashMap<&Strin
     }
 
     // All or nothing, if any files fail to be added, delete the successful files
-    if (failed_file_map.len() > 0 && succeeded_file_map.len() > 0){
-        for (path, bytes) in succeeded_file_map {
-            fs::remove_file(path).await?;
+    if failed_file_map.len() > 0 && succeeded_file_map.len() > 0 {
+        for (path, _) in &succeeded_file_map {
+            match fs::remove_file(path).await {
+                Ok(_) => {} 
+                Err(_) => {} // Do nothing for now....
+            }
         }
     }
 
@@ -33,9 +37,9 @@ pub async fn create_files(file_map: HashMap<&String, &Bytes>) -> (HashMap<&Strin
 
 // Takes in vector of file ids
 // Returns vector of file_ids that were deleted
-pub async fn delete_files(Vec<file_id){
+/*pub async fn delete_files(Vec<file_id){
 
-}
+}*/
 
 // Takes in vector of file ids
 // Returns vector of file_structs
