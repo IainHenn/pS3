@@ -31,10 +31,20 @@ pub async fn create_files(file_map: HashMap<&String, &Bytes>) -> (HashMap<&Strin
     return (succeeded_file_map, failed_file_map);
 }
 
-// Takes in vector of file ids
-// Returns vector of file_ids that were deleted
-pub async fn delete_files(Vec<file_id){
+// Takes in vector of file_path
+// Returns vector of files and that failed to parse
+pub async fn delete_files(file_paths: HashMap<String, String>) -> (Vec<String>, Vec<String>){
+    deleted_files = Vec::new();
+    failed_files = Vec::new();
 
+    for (file_id, path) in &file_paths {
+        match fs::remove_file(path).await {
+            Ok(_) => deleted_files.insert(file_id);
+            Err(_) => failed_files.insert(file_id);
+        }
+    }
+
+    return (deleted_files, failed_files);
 }
 
 // Takes in vector of file ids

@@ -59,8 +59,6 @@ pub async fn create_file(
         bytes = file_size;
     };
 
-    let temp_str: &str = "";
-
     let create: CreateFile = CreateFile {
         mime_type: content_type,
         path: format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name),
@@ -105,20 +103,45 @@ pub async fn update_file(
 }
 
 pub async fn delete_file(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
+    let config = Config::from_env();
     let res: Result<Uuid, sqlx::Error> = file::delete_file(&pg_pool, bucket_id, file_id).await;
+    let file_to_delete = HashMap::from([
+        (file_id, format!("{}/{}/{}", &config.buckets_home_path, bucket_id, file_id))
+        ])
 
     match res {
-        Ok(file_id) => (StatusCode::OK, Json(file_id)).into_response(),
+        Ok(file_id) => {
+            let (_, failed_deletes) = file_actions::delete_files(files_to_delete);
+
+            if failed_deletes.len() > 0 {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+
+            return (StatusCode::OK, Json(file_id)).into_response();
+        };
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
 pub async fn delete_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
+    let config = Config::from_env();
+    let files_to_delete = HashMap::New();
+
+    for id in file_ids {
+        files_to_delete.insert(id, format("{}/{}/{}", &config.buckets_home_path, bucket_id, id));
+    }
     let res: Result<Vec<Uuid>, sqlx::Error> =
         file::delete_files(&pg_pool, bucket_id, file_ids).await;
 
     match res {
-        Ok(file_ids) => (StatusCode::OK, Json(file_ids)).into_response(),
+        Ok(file_ids) => {
+            let (successful_deletes, failed_deletes) = file_actions::delete_files(files_to_delete);
+
+            if failed_deletes.len() > 0 {
+                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+            }
+            return (StatusCode::OK, Json(file_ids)).into_response();
+        },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
