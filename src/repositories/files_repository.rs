@@ -47,7 +47,7 @@ pub async fn get_file(
 pub async fn get_files(
     pool: &PgPool,
     bucket_id: Uuid,
-    file_ids: Vec<Uuid>,
+    file_ids: &Vec<Uuid>,
 ) -> Result<Vec<ViewFile>, sqlx::Error> {
     sqlx::query_as!(
         ViewFile,

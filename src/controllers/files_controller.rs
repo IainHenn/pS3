@@ -3,8 +3,6 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
-
-use crate::models::file::{FileUpdateModel};
 use crate::services::files_service as file;
 
 
