@@ -6,6 +6,7 @@ use axum::Json;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
+use serde_json::json;
 
 use crate::config::Config;
 use crate::lib::file_actions;
@@ -16,7 +17,20 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
     let res: Result<ViewFile, sqlx::Error> = file::get_file(&pg_pool, bucket_id, file_id).await;
 
     match res {
-        Ok(file) => (StatusCode::OK, Json(file)).into_response(),
+        Ok(file) => {
+            let map: HashMap<Uuid, String> = HashMap::from([
+                (file_id, format!("{}/{}", bucket_id, file.id.to_string()))
+            ]);
+
+            let (found_files, not_found_files) = file_actions::read_files(&map).await;
+
+            return (StatusCode::OK, Json(json!({
+                "found_files": found_files.keys().map(|k| (*k).to_string()).collect::<Vec<String>>(),
+                "not_found_files": not_found_files,
+                "message": "success"
+            }))).into_response();
+
+        },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -26,7 +40,21 @@ pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) ->
         file::get_files(&pg_pool, bucket_id, file_ids).await;
 
     match res {
-        Ok(files) => (StatusCode::OK, Json(files)).into_response(),
+        Ok(files) => {
+            let mut map: HashMap<Uuid, String> = HashMap::new();
+
+            for file in files {
+                map.insert(file.id, format!("{}/{}", bucket_id, file.id.to_string()));
+            }
+
+            let (found_files, not_found_files) = file_actions::read_files(&map).await;
+
+            return (StatusCode::OK, Json(json!({
+                "found_files": found_files.keys().map(|k| (*k).to_string()).collect::<Vec<String>>(),
+                "not_found_files": not_found_files,
+                "message": "success"
+            }))).into_response();
+        },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -74,13 +102,17 @@ pub async fn create_file(
                 (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
             ]);
             
-            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
+            let (new_files, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
             
             if failed_files.len() > 0 {
                 StatusCode::INTERNAL_SERVER_ERROR.into_response()
                 // Need to call a rollback here for the database!
             } else {
-                return (StatusCode::OK, Json(file)).into_response();
+                return (StatusCode::OK, Json(json!({
+                    "new_files": new_files.keys().map(|k| (*k).clone()).collect::<Vec<String>>(),
+                    "failed_files": failed_files.keys().map(|k| (*k).clone()).collect::<Vec<String>>(),
+                    "message": "success"
+                }))).into_response();
             }
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -116,12 +148,13 @@ pub async fn update_file(
     };
 
     let file_size = bytes.len() as i64;
+    let file_name_unborrowed = file_name.clone();
 
     let file_update: FileUpdateModel = FileUpdateModel {
         bucket_id: Some(bucket_id.to_string()),
         name: Some(file_name),
         mime_type: Some(content_type),
-        path: Some(format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name)),
+        path: Some(format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name_unborrowed)),
         size: Some(file_size),
     };
 
@@ -142,21 +175,33 @@ pub async fn update_file(
                     (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
                 ]);
 
-                let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
+                let (updated_files, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
 
                 if failed_files.len() > 0 {
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                     // Need to call a rollback here for the database!
                 } else {
-                    return (StatusCode::OK, Json(file)).into_response();
+                    return (StatusCode::OK, Json(json!({
+                        "updated_files": updated_files.keys().map(|k| (*k).clone()).collect::<Vec<String>>(),
+                        "not_found_files": failed_files.keys().map(|k| (*k).clone()).collect::<Vec<String>>(),
+                        "message": "success"
+                    }))).into_response();
+                }
+            } else if bucket_id != file.bucket_id {
+                let success = file_actions::move_file(&format!("{}/{}", file.bucket_id, file.id.to_string()), &format!("{}/{}", bucket_id, file.id.to_string())).await;
+
+                if success {
+                    return (StatusCode::OK, Json(json!({
+                        "updated_files": vec![file.id.to_string()],
+                        "not_found_files": Vec::<String>::new(),
+                        "message": "success"
+                    }))).into_response();
+                } else {
+                    return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             }
 
-            // This means the bucket changed, and in this case we move the file
-            else if bucket_id != file.bucket_id {
-                file_actions::move_file(&format!("{}/{}", file.bucket_id, file.id.to_string()), &format!("{}/{}", bucket_id, file.id.to_string()));
-            }
-            return (StatusCode::OK, Json(file)).into_response();
+            (StatusCode::OK, Json(file)).into_response()
         },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -172,15 +217,16 @@ pub async fn delete_file(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> imp
     let res: Result<Uuid, sqlx::Error> = file::delete_file(&pg_pool, bucket_id, file_id).await;
 
     match res {
-        Ok(deleted_id) => {
-            let (_, failed_deletes) = file_actions::delete_files(files_to_delete).await;
+        Ok(_) => {
+            let (deleted_files, failed_deletes) = file_actions::delete_files(files_to_delete).await;
 
-            if !failed_deletes.is_empty() {
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-
-            (StatusCode::OK, Json(deleted_id)).into_response()
+            return (StatusCode::OK, Json(json!({
+                "deleted_files": deleted_files,
+                "not_deleted_files": failed_deletes,
+                "message": "success"
+            }))).into_response();
         }
+
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -200,14 +246,15 @@ pub async fn delete_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>)
         file::delete_files(&pg_pool, bucket_id, file_ids).await;
 
     match res {
-        Ok(deleted_ids) => {
-            let (_, failed_deletes) = file_actions::delete_files(files_to_delete).await;
-
-            if !failed_deletes.is_empty() {
-                return StatusCode::INTERNAL_SERVER_ERROR.into_response();
-            }
-
-            (StatusCode::OK, Json(deleted_ids)).into_response()
+        Ok(_) => {
+            let (deleted_files, failed_deletes) = file_actions::delete_files(files_to_delete).await;
+           
+            return (StatusCode::OK, Json(json!({
+                "deleted_files": deleted_files,
+                "not_deleted_files": failed_deletes,
+                "message": "success"
+            }))).into_response();
+            
         }
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }

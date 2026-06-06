@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use axum::body::Bytes;
 use tokio::fs;
+use uuid::Uuid;
+
 
 
 // Takes in vector of file structs
@@ -59,9 +61,21 @@ pub async fn delete_files(file_paths: HashMap<String, String>) -> (Vec<String>, 
     (deleted_files, failed_files)
 }
 
-// Takes in vector of file ids
-// Returns vector of file_structs
-pub async fn read_files(){
+pub async fn read_files(file_map: &HashMap<Uuid, String>) -> (HashMap<Uuid, Bytes>, Vec<Uuid>) {
+    let mut found_files: HashMap<Uuid, Bytes> = HashMap::new();
+    let mut not_found_files: Vec<Uuid> = vec![];
 
+    for (file_id, file_path) in file_map {
+        match fs::read(file_path).await {
+            Ok(bytes) => {
+                found_files.insert(*file_id, Bytes::from(bytes));
+            }
+            Err(_) => {
+                not_found_files.push(*file_id);
+            }
+        }
+    }
+
+    return (found_files, not_found_files);
 }
 
