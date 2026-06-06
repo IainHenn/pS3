@@ -1,12 +1,17 @@
 use axum::body::Bytes;
 use axum::extract::{Multipart};
-use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use sqlx::PgPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 use serde::Serialize;
+
+use axum::response::Response;
+use axum::http::{header, StatusCode};
+use axum::body::Body;
+use tokio::fs::File;
+use tokio_util::io::ReaderStream;
 
 use serde_json::json;
 
@@ -32,24 +37,43 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
             ]);
 
             let (found_files, not_found_files) = file_actions::read_files(&map).await;
-            
-            for (file_id, _) in found_files {
-                responseBody.push(FileResult { id: file_id.to_string(), status: 200, error: None});
+
+            if not_found_files.len() > 0 {
+                return (StatusCode::NOT_FOUND, Json(json!({
+                    "message": "failed",
+                    "error": "File not found",
+                }))).into_response();
             }
 
-            for file_id in not_found_files {
-                responseBody.push(FileResult { id: file_id.to_string(), status: 404, error: Some("File not found".to_string())});
-            }
+            let physical_file = match File::open(&format!("{}/{}", bucket_id, file.id.to_string())).await {
+                Ok(f) => f,
+                Err(_) => {
+                    return (StatusCode::NOT_FOUND, Json(json!({
+                        "message": "failed",
+                        "error": "Failed to open file for download",
+                    }))).into_response();
+                }
+            };
 
-            return (StatusCode::MULTI_STATUS, Json(json!({
-                "result": responseBody,
-            }))).into_response();
+            let stream = ReaderStream::new(physical_file);
+            let body = Body::from_stream(stream);
+
+            return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, &file.mime_type)
+            .header(
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{}\"", file.name),
+            )
+            .body(body)
+            .unwrap()
+            .into_response();
+
         },
         Err(sqlx::Error::RowNotFound) => {
-            responseBody.push(FileResult { id: file_id.to_string(), status: 404, error: Some("File not found".to_string())});
-
-            return (StatusCode::MULTI_STATUS, Json(json!({
-                "result": responseBody,
+            return (StatusCode::NOT_FOUND, Json(json!({
+                "message": "failed",
+                "error": "File not found",
             }))).into_response();
         }
 
