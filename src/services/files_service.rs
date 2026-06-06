@@ -29,14 +29,13 @@ struct FileResult {
 
 pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
     let res: Result<ViewFile, sqlx::Error> = file::get_file(&pg_pool, bucket_id, file_id).await;
-    let mut responseBody: Vec<FileResult> = Vec::new();
     match res {
         Ok(file) => {
             let map: HashMap<Uuid, String> = HashMap::from([
                 (file_id, format!("{}/{}", bucket_id, file.id.to_string()))
             ]);
 
-            let (found_files, not_found_files) = file_actions::read_files(&map).await;
+            let (_, not_found_files) = file_actions::read_files(&map).await;
 
             if not_found_files.len() > 0 {
                 return (StatusCode::NOT_FOUND, Json(json!({
