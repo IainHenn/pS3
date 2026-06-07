@@ -8,6 +8,8 @@ use axum::body::Bytes;
 use tokio::fs;
 use uuid::Uuid;
 
+use crate::models::bucket;
+
 pub fn file_path(buckets_home_path: &str, bucket_id: Uuid, file_id: Uuid) -> String {
     format!("{}/{}/{}", buckets_home_path, bucket_id, file_id)
 }
@@ -94,6 +96,23 @@ pub async fn read_files(file_map: &HashMap<Uuid, String>) -> (HashMap<Uuid, Byte
     return (found_files, not_found_files);
 }
 
-pub async fn delete_files_in_bucket(bucket_id: Uuid) {
-    
+pub async fn delete_files_in_bucket(base_dir: &str, bucket_id: Uuid) -> Vec<String> {
+    let bucket_dir = format!("{}/{}", base_dir, bucket_id);
+    let mut deleted_files = Vec::new();
+
+    let mut read_dir = match fs::read_dir(&bucket_dir).await {
+        Ok(dir) => dir,
+        Err(_) => return deleted_files,
+    };
+
+    while let Ok(Some(entry)) = read_dir.next_entry().await {
+        let path = entry.path();
+        if fs::remove_file(&path).await.is_ok() {
+            deleted_files.push(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+
+    let _ = fs::remove_dir(&bucket_dir).await;
+   
+    return deleted_files
 }
