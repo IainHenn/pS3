@@ -83,7 +83,7 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
 pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
     let res: Result<Vec<ViewFile>, sqlx::Error> =
         file::get_files(&pg_pool, bucket_id, &file_ids).await;
-    let mut responseBody: Vec<FileResult> = Vec::new(); 
+    let mut response_body: Vec<FileResult> = Vec::new(); 
 
     match res {
         Ok(files) => {
@@ -110,15 +110,15 @@ pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) ->
             }
             
             for (file_id, _) in found_files {
-                responseBody.push(FileResult { id: file_id.to_string(), status: 200, error: None});
+                response_body.push(FileResult { id: file_id.to_string(), status: 200, error: None});
             }
 
             for file_id in not_found_files {
-                responseBody.push(FileResult { id: file_id.to_string(), status: 404, error: Some("File not found".to_string())});
+                response_body.push(FileResult { id: file_id.to_string(), status: 404, error: Some("File not found".to_string())});
             }
 
             return (StatusCode::MULTI_STATUS, Json(json!({
-                "result": responseBody,
+                "result": response_body,
             }))).into_response();
         },
 
@@ -324,7 +324,7 @@ pub async fn delete_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>)
     let config = Config::from_env();
     let mut files_to_delete = HashMap::new();
     let mut files_not_found: Vec<Uuid> = Vec::new();
-    let mut responseBody: Vec<FileResult> = Vec::new();
+    let mut response_body: Vec<FileResult> = Vec::new();
 
     let res: Result<Vec<Uuid>, sqlx::Error> =
         file::delete_files(&pg_pool, bucket_id, file_ids.clone()).await;
@@ -347,19 +347,19 @@ pub async fn delete_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>)
             let (deleted_files, failed_deletes) = file_actions::delete_files(files_to_delete).await;
            
             for deleted_file in deleted_files {
-                responseBody.push(FileResult {id: deleted_file, status: 200, error: None});
+                response_body.push(FileResult {id: deleted_file, status: 200, error: None});
             }
 
             for failed_file in failed_deletes {
-                responseBody.push(FileResult {id: failed_file, status: 200, error: Some("Failed to physically delete file, but file untagged in database metadata".to_string())})
+                response_body.push(FileResult {id: failed_file, status: 200, error: Some("Failed to physically delete file, but file untagged in database metadata".to_string())})
             }
 
             for not_found_file in files_not_found {
-                responseBody.push(FileResult {id: not_found_file.to_string(), status: 404, error: Some("File not found".to_string())})
+                response_body.push(FileResult {id: not_found_file.to_string(), status: 404, error: Some("File not found".to_string())})
             }
 
             return (StatusCode::MULTI_STATUS, Json(json!({
-                "result": responseBody
+                "result": response_body
             }))).into_response();
             
         }
