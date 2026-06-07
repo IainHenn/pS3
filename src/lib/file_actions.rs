@@ -8,8 +8,6 @@ use axum::body::Bytes;
 use tokio::fs;
 use uuid::Uuid;
 
-use crate::models::bucket;
-
 pub fn file_path(buckets_home_path: &str, bucket_id: Uuid, file_id: Uuid) -> String {
     format!("{}/{}/{}", buckets_home_path, bucket_id, file_id)
 }

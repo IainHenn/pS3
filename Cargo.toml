@@ -13,3 +13,6 @@ sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "tls-native-t
 tokio = { version = "1.52.3", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tokio-util = { version = "0.7", features = ["io"] }
+
+[build-dependencies]
+dotenvy = "0.15"

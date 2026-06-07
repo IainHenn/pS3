@@ -1,0 +1,2 @@
+Hello from sample1.txt
+This is a small test file for the pS3 API.

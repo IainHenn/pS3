@@ -1,0 +1,2 @@
+Hello from sample2.txt
+Second fixture file used during integration testing.

@@ -25,10 +25,13 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
       HOST: 0.0.0.0
       PORT: 3000
-      DATABASE_URL: postgres://${POSTGRES_USER:-ps3}:${POSTGRES_PASSWORD:-ps3}@postgres:5432/${POSTGRES_DB:-ps3}
+      POSTGRES_HOST: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-ps3}:${POSTGRES_PASSWORD:-ps3}@postgres:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-ps3}
     depends_on:
       postgres:
         condition: service_healthy

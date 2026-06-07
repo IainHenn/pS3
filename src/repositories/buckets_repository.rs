@@ -64,7 +64,7 @@ pub async fn delete_bucket(pool: &PgPool, bucket_id: Uuid) -> Result<Uuid, sqlx:
 
 pub async fn delete_buckets(
     pool: &PgPool,
-    bucket_ids: Vec<Uuid>,
+    bucket_ids: &Vec<Uuid>,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query!(
         "DELETE FROM buckets WHERE id = ANY($1) RETURNING id",

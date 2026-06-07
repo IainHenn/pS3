@@ -93,7 +93,7 @@ struct BucketDeleteResult {
 
 pub async fn delete_buckets(pg_pool: PgPool, bucket_ids: Vec<Uuid>) -> impl IntoResponse {
     let config = Config::from_env();
-    let res: Result<Vec<Uuid>, sqlx::Error> = bucket::delete_buckets(&pg_pool, bucket_ids).await;
+    let res: Result<Vec<Uuid>, sqlx::Error> = bucket::delete_buckets(&pg_pool, &bucket_ids).await;
     let mut response_body: Vec<BucketDeleteResult> = Vec::new();
     match res {
         Ok(queried_bucket_ids) => {
@@ -102,7 +102,7 @@ pub async fn delete_buckets(pg_pool: PgPool, bucket_ids: Vec<Uuid>) -> impl Into
             for original_bucket_id in &bucket_ids {
                 let mut found = false;
                 for bucket_id in &queried_bucket_ids {
-                    if original_bucket_id.to_string() == bucket_id.id.to_string() {
+                    if original_bucket_id.to_string() == bucket_id.to_string() {
                         found = true;
                     }
                 }
