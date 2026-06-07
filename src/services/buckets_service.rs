@@ -1,6 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
+use serde_json::json;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -12,6 +13,10 @@ pub async fn get_bucket_by_id(pg_pool: PgPool, bucket_id: Uuid) -> impl IntoResp
 
     match res {
         Ok(bucket) => (StatusCode::OK, Json(bucket)).into_response(),
+        Err(sqlx::Error::RowNotFound) => (StatusCode::NOT_FOUND, Json(json!({
+            "message": "failed",
+            "error": "Bucket not found",
+        }))).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -44,6 +49,10 @@ pub async fn update_bucket(
 
     match res {
         Ok(bucket) => (StatusCode::OK, Json(bucket)).into_response(),
+        Err(sqlx::Error::RowNotFound) => (StatusCode::NOT_FOUND, Json(json!({
+            "message": "failed",
+            "error": "Bucket not found",
+        }))).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -53,6 +62,10 @@ pub async fn delete_bucket(pg_pool: PgPool, bucket_id: Uuid) -> impl IntoRespons
 
     match res {
         Ok(bucket_id) => (StatusCode::OK, Json(bucket_id)).into_response(),
+        Err(sqlx::Error::RowNotFound) => (StatusCode::NOT_FOUND, Json(json!({
+            "message": "failed",
+            "error": "Bucket not found",
+        }))).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }

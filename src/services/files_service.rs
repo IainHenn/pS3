@@ -28,11 +28,13 @@ struct FileResult {
 }
 
 pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
+    let config = Config::from_env();
     let res: Result<ViewFile, sqlx::Error> = file::get_file(&pg_pool, bucket_id, file_id).await;
     match res {
         Ok(file) => {
+            let disk_path = file_actions::file_path(&config.buckets_home_path, bucket_id, file.id);
             let map: HashMap<Uuid, String> = HashMap::from([
-                (file_id, format!("{}/{}", bucket_id, file.id.to_string()))
+                (file_id, disk_path.clone())
             ]);
 
             let (_, not_found_files) = file_actions::read_files(&map).await;
@@ -44,7 +46,7 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
                 }))).into_response();
             }
 
-            let physical_file = match File::open(&format!("{}/{}", bucket_id, file.id.to_string())).await {
+            let physical_file = match File::open(&disk_path).await {
                 Ok(f) => f,
                 Err(_) => {
                     return (StatusCode::NOT_FOUND, Json(json!({
@@ -81,6 +83,7 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
 }
 
 pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
+    let config = Config::from_env();
     let res: Result<Vec<ViewFile>, sqlx::Error> =
         file::get_files(&pg_pool, bucket_id, &file_ids).await;
     let mut response_body: Vec<FileResult> = Vec::new(); 
@@ -90,7 +93,10 @@ pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) ->
             let mut map: HashMap<Uuid, String> = HashMap::new();
 
             for file in &files {
-                map.insert(file.id, format!("{}/{}", bucket_id, file.id.to_string()));
+                map.insert(
+                    file.id,
+                    file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
+                );
             }
 
             let (found_files, mut not_found_files) = file_actions::read_files(&map).await;
@@ -154,20 +160,23 @@ pub async fn create_file(
         bytes = file_size;
     };
 
+    let new_file_id = Uuid::new_v4();
     let create: CreateFile = CreateFile {
         mime_type: content_type,
-        path: format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name),
+        path: file_actions::file_path(&config.buckets_home_path, bucket_id, new_file_id),
         name: file_name,
         size: size,
     };
 
-    let res: Result<ViewFile, sqlx::Error> = file::create_file(&pg_pool, bucket_id, create).await;
+    let res: Result<ViewFile, sqlx::Error> =
+        file::create_file(&pg_pool, bucket_id, new_file_id, create).await;
 
     match res {
         Ok(file) => {
-            let map: HashMap<String, Bytes> = HashMap::from([
-                (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
-            ]);
+            let map: HashMap<String, Bytes> = HashMap::from([(
+                file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
+                bytes,
+            )]);
             
             let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
             
@@ -222,13 +231,12 @@ pub async fn update_file(
     };
 
     let file_size = bytes.len() as i64;
-    let file_name_unborrowed = file_name.clone();
 
     let file_update: FileUpdateModel = FileUpdateModel {
         bucket_id: Some(bucket_id.to_string()),
         name: Some(file_name),
         mime_type: Some(content_type),
-        path: Some(format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_name_unborrowed)),
+        path: Some(file_actions::file_path(&config.buckets_home_path, bucket_id, file_id)),
         size: Some(file_size),
     };
 
@@ -245,9 +253,10 @@ pub async fn update_file(
             if new_mime_type != Some(file.mime_type.clone()) || 
             new_size != Some(file.size.clone())
             {
-               let map: HashMap<String, Bytes> = HashMap::from([
-                    (format!("{}/{}", bucket_id, file.id.to_string()), bytes)
-                ]);
+               let map: HashMap<String, Bytes> = HashMap::from([(
+                    file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
+                    bytes,
+                )]);
 
                 let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
 
@@ -264,7 +273,9 @@ pub async fn update_file(
                     }))).into_response();
                 }
             } else if bucket_id != file.bucket_id { // This is for when the user moves a file to another bucket
-                let success = file_actions::move_file(&format!("{}/{}", file.bucket_id, file.id.to_string()), &format!("{}/{}", bucket_id, file.id.to_string())).await;
+                let old_path = file_actions::file_path(&config.buckets_home_path, file.bucket_id, file.id);
+                let new_path = file_actions::file_path(&config.buckets_home_path, bucket_id, file.id);
+                let success = file_actions::move_file(&old_path, &new_path).await;
 
                 if success {
                     return (StatusCode::OK, Json(json!({
@@ -294,7 +305,7 @@ pub async fn delete_file(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> imp
     let config = Config::from_env();
     let files_to_delete = HashMap::from([(
         file_id.to_string(),
-        format!("{}/{}/{}", config.buckets_home_path, bucket_id, file_id),
+        file_actions::file_path(&config.buckets_home_path, bucket_id, file_id),
     )]);
 
     let res: Result<Uuid, sqlx::Error> = file::delete_file(&pg_pool, bucket_id, file_id).await;
@@ -340,7 +351,7 @@ pub async fn delete_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>)
             for id in &deleteable_files {
                 files_to_delete.insert(
                     id.to_string(),
-                    format!("{}/{}/{}", config.buckets_home_path, bucket_id, id),
+                    file_actions::file_path(&config.buckets_home_path, bucket_id, *id),
                 );
             }
 

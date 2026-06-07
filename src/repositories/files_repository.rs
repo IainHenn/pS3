@@ -6,15 +6,17 @@ use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
 pub async fn create_file(
     pool: &PgPool,
     bucket_id: Uuid,
+    file_id: Uuid,
     create: CreateFile,
 ) -> Result<ViewFile, sqlx::Error> {
     sqlx::query_as!(
         ViewFile,
         r#"
-        INSERT INTO files (bucket_id, name, mime_type, size, path)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO files (id, bucket_id, name, mime_type, size, path)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, bucket_id, name, mime_type, size, path, created_at, updated_at
         "#,
+        file_id,
         bucket_id,
         create.name,
         create.mime_type,
