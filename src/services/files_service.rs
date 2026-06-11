@@ -233,64 +233,31 @@ pub async fn update_file(
     let file_size = bytes.len() as i64;
 
     let file_update: FileUpdateModel = FileUpdateModel {
-        bucket_id: Some(bucket_id.to_string()),
         name: Some(file_name),
         mime_type: Some(content_type),
         path: Some(file_actions::file_path(&config.buckets_home_path, bucket_id, file_id)),
         size: Some(file_size),
     };
-
-    let new_size = file_update.size;
-    let new_mime_type = file_update.mime_type.clone();
-
+    
     let res: Result<ViewFile, sqlx::Error> =
         file::update_file(&pg_pool, bucket_id, file_id, &file_update).await;
 
     match res {
         Ok(file) => {
+            let map: HashMap<String, Bytes> = HashMap::from([(
+                file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
+                bytes,
+            )]);
 
-            // This just means the file itself changed 
-            if new_mime_type != Some(file.mime_type.clone()) || 
-            new_size != Some(file.size.clone())
-            {
-               let map: HashMap<String, Bytes> = HashMap::from([(
-                    file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
-                    bytes,
-                )]);
+            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
 
-                let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
-
-                if failed_files.len() > 0 {
-                    return (StatusCode::OK, Json(json!({
-                        "result": file.id.to_string(),
-                        "message": "success"
-                    }))).into_response();
-                    // Need to call a rollback here for the database!
-                } else {
-                    return (StatusCode::OK, Json(json!({
-                        "result": file.id.to_string(),
-                        "message": "success"
-                    }))).into_response();
-                }
-            } else if bucket_id != file.bucket_id { // This is for when the user moves a file to another bucket
-                let old_path = file_actions::file_path(&config.buckets_home_path, file.bucket_id, file.id);
-                let new_path = file_actions::file_path(&config.buckets_home_path, bucket_id, file.id);
-                let success = file_actions::move_file(&old_path, &new_path).await;
-
-                if success {
-                    return (StatusCode::OK, Json(json!({
-                        "result": file.id.to_string(),
-                        "message": "success"
-                    }))).into_response();
-                } else {
-                    return (StatusCode::OK, Json(json!({
-                        "result": file.id.to_string(),
-                        "message": "success",
-                        "error": "Failed to move file to new bucket",
-                    }))).into_response();
-                    // Need to call a rollback here for the database!
-                }
-            } else { // For any other case...(?)
+            if failed_files.len() > 0 {
+                return (StatusCode::OK, Json(json!({
+                    "result": file.id.to_string(),
+                    "message": "success"
+                }))).into_response();
+                // Need to call a rollback here for the database!
+            } else {
                 return (StatusCode::OK, Json(json!({
                     "result": file.id.to_string(),
                     "message": "success"
@@ -298,6 +265,42 @@ pub async fn update_file(
             }
         },
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
+}
+
+pub async fn move_file(pg_pool: PgPool, old_bucket_id: Uuid, new_bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
+    let config = Config::from_env();
+
+    let res: Result<ViewFile, sqlx::Error> =
+        file::move_file(&pg_pool, old_bucket_id, new_bucket_id, file_id).await;
+
+    match res {
+        Ok(file) => {
+            let old_path = file_actions::file_path(&config.buckets_home_path, old_bucket_id, file.id);
+            let new_path = file_actions::file_path(&config.buckets_home_path, new_bucket_id, file.id);
+            let success = file_actions::move_file(&old_path, &new_path).await;
+        
+            if success {
+                return (StatusCode::OK, Json(json!({
+                    "result": file.id.to_string(),
+                    "message": "success"
+                }))).into_response();
+            } else {
+                return (StatusCode::OK, Json(json!({
+                    "result": file.id.to_string(),
+                    "message": "success",
+                    "error": "Failed to move file to new bucket",
+                }))).into_response();
+                // Need to call a rollback here for the database!
+            }
+        },
+
+        Err(_) => {
+            return (StatusCode::OK, Json(json!({
+                "error": "Failed to move file to new bucket! Database issue.",
+                "message": "failed"
+            }))).into_response();
+        }
     }
 }
 

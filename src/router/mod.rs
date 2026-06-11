@@ -4,6 +4,7 @@ use axum::routing::get;
 use axum::routing::put;
 use axum::routing::post;
 use axum::routing::delete;
+use axum::routing::patch;
 use axum::Router;
 use sqlx::PgPool;
 use crate::controllers::buckets_controller;
@@ -20,10 +21,11 @@ pub fn create_router(db: PgPool) -> Router {
         .route("/buckets", delete(buckets_controller::delete_buckets))
     // File routes
        .route("/buckets/{bucket_id}/files/{file_id}", get(files_controller::get_file_by_id))
-       .route("/buckets/{bucket_id}/files/{file_id}", put(files_controller::update_file))
+       .route("/buckets/{bucket_id}/files/{file_id}", patch(files_controller::update_file))
        .route("/buckets/{bucket_id}/files/{file_id}", delete(files_controller::delete_file))
        .route("/buckets/{bucket_id}/files", get(files_controller::get_files))
        .route("/buckets/{bucket_id}/files", post(files_controller::create_file))
-       .route("/buckets/{bucket_id}/files", delete(files_controller::delete_files))
+       .route("/buckets/{bucket_id}/files", delete(files_controller::delete_files))      
+       .route("/buckets/{old_bucket_id}/files/{file_id}/to/{new_bucket_id}",patch(files_controller::move_file))       
        .with_state(db)
 }

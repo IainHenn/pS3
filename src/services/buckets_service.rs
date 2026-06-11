@@ -57,7 +57,10 @@ pub async fn update_bucket(
             "message": "failed",
             "error": "Bucket not found",
         }))).into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(e) => (StatusCode::NOT_FOUND, Json(json!({
+            "message": "failed",
+            "error": e.to_string(),
+        }))).into_response(),
     }
 }
 

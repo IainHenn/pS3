@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import requests
@@ -52,14 +53,19 @@ def call(method: str, path: str, **kwargs) -> requests.Response:
 
 def upload_file(bucket_id: str, file_path: Path, method: str = "POST", file_id: str | None = None) -> requests.Response:
     path = f"/buckets/{bucket_id}/files"
-    if method == "PUT":
+    if method in ("PUT", "PATCH"):
         if not file_id:
-            raise ValueError("file_id is required for PUT uploads")
+            raise ValueError("file_id is required for PUT/PATCH uploads")
         path = f"{path}/{file_id}"
 
     with file_path.open("rb") as handle:
         files = {"file": (file_path.name, handle, "text/plain")}
         return call(method, path, files=files)
+
+
+def move_file(old_bucket_id: str, file_id: str, new_bucket_id: str) -> requests.Response:
+    path = f"/buckets/{old_bucket_id}/files/{file_id}/to/{new_bucket_id}"
+    return call("PATCH", path)
 
 
 def extract_id(response: requests.Response, *keys: str) -> str | None:
@@ -96,15 +102,26 @@ def main() -> int:
         print("API is not healthy. Start the server first.", file=sys.stderr)
         return 1
 
+    # Unique names so re-runs don't hit buckets.name UNIQUE from leftover rows.
+    run_id = uuid.uuid4().hex[:8]
+    bucket_a_name = f"test-bucket-a-{run_id}"
+    bucket_b_name = f"test-bucket-b-{run_id}"
+
     section("Buckets - create")
-    bucket_a = call("POST", "/buckets", json={"name": "test-bucket-a"})
-    bucket_b = call("POST", "/buckets", json={"name": "test-bucket-b"})
+    bucket_a = call("POST", "/buckets", json={"name": bucket_a_name})
+    bucket_b = call("POST", "/buckets", json={"name": bucket_b_name})
 
     bucket_a_id = extract_id(bucket_a, "id")
     bucket_b_id = extract_id(bucket_b, "id")
 
     if not bucket_a_id or not bucket_b_id:
         print("Failed to create buckets.", file=sys.stderr)
+        if bucket_a.status_code == 500 or bucket_b.status_code == 500:
+            print(
+                "Server returned 500 — often a duplicate bucket name or DB error. "
+                "Check docker/postgres logs.",
+                file=sys.stderr,
+            )
         return 1
 
     section("Buckets - get by id")
@@ -114,7 +131,7 @@ def main() -> int:
     call("GET", "/buckets", params={"bucket_ids": f"{bucket_a_id},{bucket_b_id}"})
 
     section("Buckets - update")
-    call("PUT", f"/buckets/{bucket_a_id}", json={"name": "test-bucket-a-renamed"})
+    call("PUT", f"/buckets/{bucket_a_id}", json={"name": f"{bucket_a_name}-renamed"})
 
     section("Files - create")
     created_file_ids: list[str] = []
@@ -141,13 +158,37 @@ def main() -> int:
         params={"file_ids": f"{file_one_id},{file_two_id}"},
     )
 
-    section("Files - update")
-    upload_file(
+    section("Files - update (physical content)")
+    update_response = upload_file(
         bucket_a_id,
         fixture_files[2],
-        method="PUT",
+        method="PATCH",
         file_id=file_one_id,
     )
+    if update_response.status_code != 200:
+        print("Failed to update file content.", file=sys.stderr)
+        return 1
+
+    updated = call("GET", f"/buckets/{bucket_a_id}/files/{file_one_id}")
+    if updated.status_code != 200:
+        print("Updated file is not readable from original bucket.", file=sys.stderr)
+        return 1
+
+    section("Files - move to another bucket")
+    move_response = move_file(bucket_a_id, file_one_id, bucket_b_id)
+    if move_response.status_code != 200:
+        print("Failed to move file between buckets.", file=sys.stderr)
+        return 1
+
+    moved = call("GET", f"/buckets/{bucket_b_id}/files/{file_one_id}")
+    if moved.status_code != 200:
+        print("Moved file is not readable from destination bucket.", file=sys.stderr)
+        return 1
+
+    stale = call("GET", f"/buckets/{bucket_a_id}/files/{file_one_id}")
+    if stale.status_code != 404:
+        print("Moved file should no longer be in the original bucket.", file=sys.stderr)
+        return 1
 
     section("Files - delete one")
     call("DELETE", f"/buckets/{bucket_a_id}/files/{file_two_id}")
@@ -155,7 +196,7 @@ def main() -> int:
     section("Files - delete many")
     call(
         "DELETE",
-        f"/buckets/{bucket_a_id}/files",
+        f"/buckets/{bucket_b_id}/files",
         params={"file_ids": file_one_id},
     )
 

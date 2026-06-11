@@ -45,7 +45,7 @@ pub async fn update_bucket(
 
     if let Some(name) = bucket_update.name {
         separated.push("name = ");
-        separated.push_bind(name);
+        separated.push_bind_unseparated(name);
     }
 
     qb.push(" WHERE id = ");

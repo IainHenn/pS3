@@ -24,7 +24,6 @@ pub struct ViewFile {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FileUpdateModel {
-    pub bucket_id: Option<String>,
     pub name: Option<String>,
     pub mime_type: Option<String>,
     pub size: Option<i64>,

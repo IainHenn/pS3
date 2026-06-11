@@ -13,6 +13,13 @@ pub struct BucketFilePath {
 }
 
 #[derive(Deserialize)]
+pub struct BucketTransfer {
+    pub old_bucket_id: Uuid,
+    pub new_bucket_id: Uuid,
+    pub file_id: Uuid,
+}
+
+#[derive(Deserialize)]
 pub struct IdsQuery {
     file_ids: String,
 }
@@ -46,7 +53,7 @@ pub async fn create_file(
     file::create_file(pool, bucket_id, multipart).await
 }
 
-
+// This is for updating a file that you have in a bucket --> PUT
 pub async fn update_file(
     State(pool): State<PgPool>,
     Path(path): Path<BucketFilePath>,
@@ -56,6 +63,13 @@ pub async fn update_file(
     file::update_file(pool, path.bucket_id, path.file_id, multipart).await
 }
 
+pub async fn move_file(
+    State(pool): State<PgPool>,
+    Path(path): Path<BucketTransfer>
+) -> impl IntoResponse {
+
+    file::move_file(pool, path.old_bucket_id, path.new_bucket_id, path.file_id).await
+}
 pub async fn delete_file(
     State(pool): State<PgPool>,
     Path(path): Path<BucketFilePath>,
