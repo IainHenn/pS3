@@ -160,16 +160,27 @@ pub async fn create_file(
         bytes = file_size;
     };
 
-    let new_file_id = Uuid::new_v4();
+    let file_id = Uuid::new_v4();
     let create: CreateFile = CreateFile {
+        id: file_id,
         mime_type: content_type,
-        path: file_actions::file_path(&config.buckets_home_path, bucket_id, new_file_id),
+        path: file_actions::file_path(&config.buckets_home_path, bucket_id, file_id),
         name: file_name,
         size: size,
     };
 
+    let mut tx  = match pg_pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+            "message": "failure",
+            "error": "Failed to create file"
+        }))).into_response();
+        }
+    };
+
     let res: Result<ViewFile, sqlx::Error> =
-        file::create_file(&pg_pool, bucket_id, new_file_id, create).await;
+        file::create_file(&mut tx, bucket_id, create).await;
 
     match res {
         Ok(file) => {
@@ -177,23 +188,32 @@ pub async fn create_file(
                 file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
                 bytes,
             )]);
-            
-            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
-            
+
+            let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) =
+                file_actions::create_or_update_files(&map).await;
+
             if failed_files.len() > 0 {
+                let _ = tx.rollback().await;
                 return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
                     "message": "failure",
                     "error": "Failed to create file"
                 }))).into_response();
-                // Need to call a rollback here for the database!
-            } else {
-                return (StatusCode::OK, Json(json!({
-                    "new_id": file.id.to_string(),
-                    "message": "success"
+            }
+
+            if tx.commit().await.is_err() {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                    "message": "failure",
+                    "error": "Failed to create file"
                 }))).into_response();
             }
+
+            return (StatusCode::OK, Json(json!({
+                "new_id": file.id.to_string(),
+                "message": "success"
+            }))).into_response();
         }
         Err(_) => {
+            let _ = tx.rollback().await;
             return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
                 "message": "failure",
                 "error": "Failed to create file"

@@ -1,12 +1,11 @@
-use sqlx::PgPool;
+use sqlx::{PgPool};
 use uuid::Uuid;
 
 use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
 
 pub async fn create_file(
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     bucket_id: Uuid,
-    file_id: Uuid,
     create: CreateFile,
 ) -> Result<ViewFile, sqlx::Error> {
     sqlx::query_as!(
@@ -16,14 +15,14 @@ pub async fn create_file(
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, bucket_id, name, mime_type, size, path, created_at, updated_at
         "#,
-        file_id,
+        create.id,
         bucket_id,
         create.name,
         create.mime_type,
         create.size,
         create.path,
     )
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await
 }
 

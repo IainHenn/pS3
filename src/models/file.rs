@@ -2,8 +2,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct CreateFile {
+    pub id: Uuid,
     pub name: String,
     pub mime_type: String,
     pub size: i64,
