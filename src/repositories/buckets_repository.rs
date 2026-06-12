@@ -55,22 +55,23 @@ pub async fn update_bucket(
     qb.build_query_as::<ViewBucket>().fetch_one(pool).await
 }
 
-pub async fn delete_bucket(pool: &PgPool, bucket_id: Uuid) -> Result<Uuid, sqlx::Error> {
+pub async fn delete_bucket(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+bucket_id: Uuid) -> Result<Uuid, sqlx::Error> {
     sqlx::query!("DELETE FROM buckets WHERE id = $1 RETURNING id", bucket_id)
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await
         .map(|row| row.id)
 }
 
 pub async fn delete_buckets(
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     bucket_ids: &Vec<Uuid>,
 ) -> Result<Vec<Uuid>, sqlx::Error> {
     sqlx::query!(
         "DELETE FROM buckets WHERE id = ANY($1) RETURNING id",
         &bucket_ids[..] as &[Uuid]
     )
-    .fetch_all(pool)
+    .fetch_all(&mut **tx)
     .await
     .map(|rows| rows.into_iter().map(|row| row.id).collect())
 }

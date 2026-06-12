@@ -66,23 +66,50 @@ pub async fn update_bucket(
 
 pub async fn delete_bucket(pg_pool: PgPool, bucket_id: Uuid) -> impl IntoResponse {
     let config = Config::from_env();
-    let res: Result<Uuid, sqlx::Error> = bucket::delete_bucket(&pg_pool, bucket_id).await;
+
+    let mut tx  = match pg_pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+            "message": "failure",
+            "error": "Failed to delete bucket"
+        }))).into_response();
+        }
+    };
+
+    let res: Result<Uuid, sqlx::Error> = bucket::delete_bucket(&mut tx, bucket_id).await;
 
     match res {
         Ok(bucket_id) => {
             
             let deleted_files = file_actions::delete_files_in_bucket(&config.buckets_home_path, bucket_id).await;
+
+            if tx.commit().await.is_err() {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                    "message": "failure",
+                    "error": "Failed to delete bucket"
+                }))).into_response();
+            }
+
             return (StatusCode::OK, Json(json!({
                 "deleted_bucket": bucket_id,
                 "deleted_files": deleted_files,
                 "message": "success",
             }))).into_response();
         },
-        Err(sqlx::Error::RowNotFound) => (StatusCode::NOT_FOUND, Json(json!({
-            "message": "failed",
-            "error": "Bucket not found",
-        }))).into_response(),
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(sqlx::Error::RowNotFound) => {
+            let _ = tx.rollback().await;
+
+            return (StatusCode::NOT_FOUND, Json(json!({
+                "message": "failed",
+                "error": "Bucket not found",
+            }))).into_response()
+        },
+        Err(_) => {
+            let _ = tx.rollback().await;
+
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        },
     }
 }
 
@@ -96,7 +123,18 @@ struct BucketDeleteResult {
 
 pub async fn delete_buckets(pg_pool: PgPool, bucket_ids: Vec<Uuid>) -> impl IntoResponse {
     let config = Config::from_env();
-    let res: Result<Vec<Uuid>, sqlx::Error> = bucket::delete_buckets(&pg_pool, &bucket_ids).await;
+
+    let mut tx  = match pg_pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+            "message": "failure",
+            "error": "Failed to delete buckets"
+        }))).into_response();
+        }
+    };
+
+    let res: Result<Vec<Uuid>, sqlx::Error> = bucket::delete_buckets(&mut tx, &bucket_ids).await;
     let mut response_body: Vec<BucketDeleteResult> = Vec::new();
     match res {
         Ok(queried_bucket_ids) => {
@@ -122,10 +160,20 @@ pub async fn delete_buckets(pg_pool: PgPool, bucket_ids: Vec<Uuid>) -> impl Into
                     error: None});
             }
 
+            if tx.commit().await.is_err() {
+                return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                    "message": "failure",
+                    "error": "Failed to delete buckets"
+                }))).into_response();
+            }
+
             return (StatusCode::MULTI_STATUS, Json(json!({
                 "result": response_body,
             }))).into_response();
         },
-        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(_) => {
+            let _ = tx.rollback().await;
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response()
+        },
     }
 }
