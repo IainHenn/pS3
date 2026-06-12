@@ -258,9 +258,19 @@ pub async fn update_file(
         path: Some(file_actions::file_path(&config.buckets_home_path, bucket_id, file_id)),
         size: Some(file_size),
     };
+
+    let mut tx  = match pg_pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+            "message": "failure",
+            "error": "Failed to update file"
+        }))).into_response();
+        }
+    };
     
     let res: Result<ViewFile, sqlx::Error> =
-        file::update_file(&pg_pool, bucket_id, file_id, &file_update).await;
+        file::update_file(&mut tx, bucket_id, file_id, &file_update).await;
 
     match res {
         Ok(file) => {
@@ -272,12 +282,21 @@ pub async fn update_file(
             let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;
 
             if failed_files.len() > 0 {
+
+                let _ = tx.rollback().await;
+
                 return (StatusCode::OK, Json(json!({
                     "result": file.id.to_string(),
                     "message": "success"
-                }))).into_response();
-                // Need to call a rollback here for the database!
+                }))).into_response();                
             } else {
+                if tx.commit().await.is_err() {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                        "message": "failure",
+                        "error": "Failed to update file"
+                    }))).into_response();
+                }
+
                 return (StatusCode::OK, Json(json!({
                     "result": file.id.to_string(),
                     "message": "success"
@@ -291,8 +310,18 @@ pub async fn update_file(
 pub async fn move_file(pg_pool: PgPool, old_bucket_id: Uuid, new_bucket_id: Uuid, file_id: Uuid) -> impl IntoResponse {
     let config = Config::from_env();
 
+    let mut tx  = match pg_pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+            "message": "failure",
+            "error": "Failed to move file"
+        }))).into_response();
+        }
+    };
+
     let res: Result<ViewFile, sqlx::Error> =
-        file::move_file(&pg_pool, old_bucket_id, new_bucket_id, file_id).await;
+        file::move_file(&mut tx, old_bucket_id, new_bucket_id, file_id).await;
 
     match res {
         Ok(file) => {
@@ -301,17 +330,27 @@ pub async fn move_file(pg_pool: PgPool, old_bucket_id: Uuid, new_bucket_id: Uuid
             let success = file_actions::move_file(&old_path, &new_path).await;
         
             if success {
+
+                if tx.commit().await.is_err() {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({
+                        "message": "failure",
+                        "error": "Failed to move file"
+                    }))).into_response();
+                }
+
                 return (StatusCode::OK, Json(json!({
                     "result": file.id.to_string(),
                     "message": "success"
                 }))).into_response();
             } else {
+
+                let _ = tx.rollback().await;
+
                 return (StatusCode::OK, Json(json!({
                     "result": file.id.to_string(),
                     "message": "success",
                     "error": "Failed to move file to new bucket",
                 }))).into_response();
-                // Need to call a rollback here for the database!
             }
         },
 

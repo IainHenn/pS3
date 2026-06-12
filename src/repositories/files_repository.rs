@@ -1,4 +1,4 @@
-use sqlx::{PgPool};
+use sqlx::{PgPool, Transaction};
 use uuid::Uuid;
 
 use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
@@ -65,7 +65,7 @@ pub async fn get_files(
 }
 
 pub async fn update_file(
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     bucket_id: Uuid,
     file_id: Uuid,
     file_update: &FileUpdateModel,
@@ -96,11 +96,11 @@ pub async fn update_file(
     qb.push_bind(bucket_id);
     qb.push(" RETURNING id, bucket_id, name, mime_type, size, path, created_at, updated_at");
 
-    qb.build_query_as::<ViewFile>().fetch_one(pool).await
+    qb.build_query_as::<ViewFile>().fetch_one(&mut **tx).await
 }
 
 pub async fn move_file(
-    pool: &PgPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     old_bucket_id: Uuid,
     new_bucket_id: Uuid,
     file_id: Uuid
@@ -117,7 +117,7 @@ pub async fn move_file(
     qb.push_bind(old_bucket_id);
     qb.push(" RETURNING id, bucket_id, name, mime_type, size, path, created_at, updated_at");
 
-    qb.build_query_as::<ViewFile>().fetch_one(pool).await
+    qb.build_query_as::<ViewFile>().fetch_one(&mut **tx).await
 }
 
 
