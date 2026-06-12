@@ -1,4 +1,4 @@
-use sqlx::{PgPool, Transaction};
+use sqlx::{PgPool};
 use uuid::Uuid;
 
 use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
