@@ -4,7 +4,6 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY .sqlx ./.sqlx
 COPY src ./src
-ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 FROM debian:bookworm-slim
