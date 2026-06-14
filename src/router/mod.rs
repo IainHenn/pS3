@@ -9,6 +9,12 @@ use axum::Router;
 use sqlx::PgPool;
 use crate::controllers::buckets_controller;
 
+/*
+things to do:
+    - update the GET /buckets route to have an optional query, providing no query shows all bucketss
+        - same idea with GET /buckets/{bucket_id}/files
+*/
+
 pub fn create_router(db: PgPool) -> Router {
     Router::new()
         .route("/health", get(health_controller::get_health))

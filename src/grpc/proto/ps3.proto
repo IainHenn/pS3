@@ -1,0 +1,184 @@
+syntax = "proto3";
+package ps3;
+
+service Health {
+  // health
+  rpc GetHealth (HealthyRequest) returns (HealthReply)
+}
+
+message HealthyRequest {
+  string no_request_needed = 1;
+}
+
+message HealthReply {
+  string message = 1;
+  string error = 2;
+}
+
+
+service Files {
+  // files
+  rpc GetFileById (FileRequest) returns (stream FileReply);
+  rpc GetFiles (FilesRequest) returns (FilesReply);
+  rpc DeleteFile (FileDeleteRequest) returns (FileDeleteReply);
+  rpc DeleteFiles (FilesDeleteRequest) returns (FilesDeleteReply);
+  rpc UpdateFile (FilesUpdateRequest) returns (FileReply);
+  rpc MoveFile (FileMovementRequest) returns (FileMovementReply);
+  rpc CreateFile (FileCreateRequest) returns (FileCreateReply);
+}
+
+// GetFileById Request and Reply
+message FileRequest {
+  string file_id = 1;
+}
+
+message FileReply {
+  FilesMetadata metadata = 1;
+  bytes content = 2;
+  string message = 3;
+  string error = 4;
+}
+
+// GetFiles Request and Reply
+message FilesRequest {
+  string file_ids = 1; // query param, optional
+}
+
+message FilesMetadata {
+  string file_id = 1;
+  string bucket_id = 2;
+  string name = 3; 
+  string mime_type = 4;
+  int64 size = 5;
+  string path = 6;
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+message FilesReply {
+  repeated FilesMetadata files = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message FileDeleteRequest {
+  string file_id = 1;
+}
+
+message FilesDeleteRequest {
+  string file_ids = 1;
+}
+
+message FileDeleteReply {
+  string file_id = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message FilesDeleteMetadata {
+  string file_id = 1;
+  string message = 2;
+  string error = 3;
+}
+
+message FilesDeleteReply {
+  repeated FilesDeleteMetadata files = 1;
+}
+
+// UpdateFile Request
+message FilesUpdateRequest {
+  string bucket_id = 1;
+  string file_id = 2;
+  string name = 3;
+  string mime_type = 4;
+  bytes content = 5;
+}
+
+// MoveFile Request and Reply
+message FileMovementRequest {
+  string old_bucket_id = 1;
+  string new_bucket_id = 2;
+  string file_id = 3;
+}
+
+message FileMovementReply {
+  string result = 1;
+  string message = 2;
+  string error = 3;
+}
+
+// CreateFile Request and Reply
+message FileCreateRequest {
+  string bucket_id = 1;
+  string name = 2;
+  string mime_type = 3;
+  bytes content = 4;
+}
+
+message FileCreateReply {
+  string new_id = 1;
+  string message = 2;
+  string error = 3;
+}
+
+
+service Buckets {
+  // buckets
+  rpc GetBucket(BucketRequest) returns (BucketReply);
+  rpc GetBuckets(BucketsRequest) returns (BucketsReply);
+  rpc CreateBucket(BucketCreateRequest) returns (BucketReply);
+  rpc UpdateBucket(BucketUpdateRequest) returns (BucketReply);
+  rpc DeleteBucket(BucketDeleteRequest) returns (BucketDeleteReply);
+  rpc DeleteBuckets(BucketDeleteRequest) returns (BucketsDeleteReply);
+}
+
+// GetBucket Request and Reply
+message BucketRequest {
+  string bucket_id = 1;
+}
+
+message BucketReply {
+  string bucket_id = 1;
+  string bucket_name = 2;
+  string created_at = 3;
+  string message = 4;
+  string error = 5;
+}
+
+// GetBuckets Request and Reply
+message BucketsRequest {
+  string bucket_ids = 1; // query param, optional
+}
+
+message BucketsReply {
+  repeated BucketReply buckets = 1;
+  string message = 2;
+  string error = 3;
+}
+
+// CreateBucket Request
+message BucketCreateRequest {
+  string bucket_name = 1;
+}
+
+// UpdateBucket Request
+message BucketUpdateRequest {
+  string bucket_name = 1;
+}
+
+// DeleteBucket Request and Reply
+message BucketDeleteRequest {
+  string bucket_id = 1; 
+}
+
+
+message BucketDeleteReply {
+  string deleted_bucket = 1;
+  repeated FileDeleteRequest files_deleted = 2;
+  string error = 3;
+}
+
+// DeleteBuckets Request and Reply
+message BucketDeletesRequest {
+  string bucket_ids = 1;
+}
