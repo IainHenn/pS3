@@ -48,16 +48,21 @@ pub async fn get_file(
 pub async fn get_files(
     pool: &PgPool,
     bucket_id: Uuid,
-    file_ids: &Vec<Uuid>,
+    file_ids: &[Uuid],
 ) -> Result<Vec<ViewFile>, sqlx::Error> {
+    if file_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
     sqlx::query_as!(
         ViewFile,
         r#"
         SELECT id, bucket_id, name, mime_type, size, path, created_at, updated_at
         FROM files
         WHERE id = ANY($1) AND bucket_id = $2
+        ORDER BY created_at ASC
         "#,
-        &file_ids[..] as &[Uuid],
+        file_ids as &[Uuid],
         bucket_id,
     )
     .fetch_all(pool)

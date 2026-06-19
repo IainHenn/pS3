@@ -1,5 +1,4 @@
 use axum::body::Bytes;
-use axum::extract::{Multipart};
 use axum::response::IntoResponse;
 use axum::Json;
 use sqlx::PgPool;
@@ -17,8 +16,65 @@ use serde_json::json;
 
 use crate::config::Config;
 use crate::lib::file_actions;
+use crate::lib::multipart::FileUpload;
 use crate::models::file::{CreateFile, FileUpdateModel, ViewFile};
 use crate::repositories::files_repository as file;
+
+#[derive(Serialize, Clone)]
+pub struct FileFetchResult {
+    pub file_id: String,
+    pub bucket_id: Option<String>,
+    pub name: Option<String>,
+    pub mime_type: Option<String>,
+    pub size: Option<i64>,
+    pub path: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub message: String,
+    pub error: Option<String>,
+    pub status: u16,
+}
+
+#[derive(Serialize)]
+pub struct GetFilesResponse {
+    pub result: Vec<FileFetchResult>,
+    pub message: String,
+    pub error: Option<String>,
+}
+
+impl FileFetchResult {
+    fn found(file: ViewFile) -> Self {
+        Self {
+            file_id: file.id.to_string(),
+            bucket_id: Some(file.bucket_id.to_string()),
+            name: Some(file.name),
+            mime_type: Some(file.mime_type),
+            size: Some(file.size),
+            path: Some(file.path),
+            created_at: Some(file.created_at.to_rfc3339()),
+            updated_at: Some(file.updated_at.to_rfc3339()),
+            message: "success".to_string(),
+            error: None,
+            status: 200,
+        }
+    }
+
+    fn not_found(file_id: Uuid, error: &str) -> Self {
+        Self {
+            file_id: file_id.to_string(),
+            bucket_id: None,
+            name: None,
+            mime_type: None,
+            size: None,
+            path: None,
+            created_at: None,
+            updated_at: None,
+            message: "failed".to_string(),
+            error: Some(error.to_string()),
+            status: 404,
+        }
+    }
+}
 
 #[derive(Serialize)]
 struct FileResult {
@@ -82,52 +138,49 @@ pub async fn get_file_by_id(pg_pool: PgPool, bucket_id: Uuid, file_id: Uuid) -> 
     }
 }
 
-pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
+pub async fn fetch_files(
+    pg_pool: PgPool,
+    bucket_id: Uuid,
+    file_ids: Vec<Uuid>,
+) -> Result<GetFilesResponse, sqlx::Error> {
     let config = Config::from_env();
-    let res: Result<Vec<ViewFile>, sqlx::Error> =
-        file::get_files(&pg_pool, bucket_id, &file_ids).await;
-    let mut response_body: Vec<FileResult> = Vec::new(); 
+    let files = file::get_files(&pg_pool, bucket_id, &file_ids).await?;
 
-    match res {
-        Ok(files) => {
-            let mut map: HashMap<Uuid, String> = HashMap::new();
+    let mut files_by_id: HashMap<Uuid, ViewFile> = HashMap::new();
+    let mut map: HashMap<Uuid, String> = HashMap::new();
 
-            for file in &files {
-                map.insert(
-                    file.id,
-                    file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
-                );
+    for file in files {
+        map.insert(
+            file.id,
+            file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
+        );
+        files_by_id.insert(file.id, file);
+    }
+
+    let (found_on_disk, _) = file_actions::read_files(&map).await;
+    let mut results: Vec<FileFetchResult> = Vec::with_capacity(file_ids.len());
+
+    for file_id in file_ids {
+        match files_by_id.get(&file_id) {
+            Some(file) if found_on_disk.contains_key(&file_id) => {
+                results.push(FileFetchResult::found(file.clone()));
             }
-
-            let (found_files, mut not_found_files) = file_actions::read_files(&map).await;
-            
-            // For IDs not found in SQL query
-            for original_file_id in &file_ids {
-                let mut found = false;
-                for file in &files {
-                    if original_file_id.to_string() == file.id.to_string() {
-                        found = true;
-                    }
-                }
-
-                if found == false {
-                    not_found_files.push(original_file_id.clone());
-                }
+            _ => {
+                results.push(FileFetchResult::not_found(file_id, "File not found"));
             }
-            
-            for (file_id, _) in found_files {
-                response_body.push(FileResult { id: file_id.to_string(), status: 200, error: None});
-            }
+        }
+    }
 
-            for file_id in not_found_files {
-                response_body.push(FileResult { id: file_id.to_string(), status: 404, error: Some("File not found".to_string())});
-            }
+    Ok(GetFilesResponse {
+        result: results,
+        message: "success".to_string(),
+        error: None,
+    })
+}
 
-            return (StatusCode::MULTI_STATUS, Json(json!({
-                "result": response_body,
-            }))).into_response();
-        },
-
+pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) -> impl IntoResponse {
+    match fetch_files(pg_pool, bucket_id, file_ids).await {
+        Ok(response) => (StatusCode::MULTI_STATUS, Json(response)).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -135,38 +188,18 @@ pub async fn get_files(pg_pool: PgPool, bucket_id: Uuid, file_ids: Vec<Uuid>) ->
 pub async fn create_file(
     pg_pool: PgPool,
     bucket_id: Uuid,
-    mut multipart: Multipart,
+    upload: FileUpload,
 ) -> impl IntoResponse {
     let config = Config::from_env();
-    let mut file_name = String::new();
-    let mut content_type = String::new();
-    let size = 0;
-    let mut bytes = Bytes::new();
-
-    while let Ok(Some(field)) = multipart.next_field().await {
-        
-        if let Some(name) = field.file_name(){
-            file_name = name.to_string();
-        }
-
-        if let Some(mime) = field.content_type(){
-            content_type = mime.to_string();
-        }
-
-        let Ok(file_size) = field.bytes().await else {
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        };
-
-        bytes = file_size;
-    };
 
     let file_id = Uuid::new_v4();
+    let file_size = upload.size();
     let create: CreateFile = CreateFile {
         id: file_id,
-        mime_type: content_type,
+        mime_type: upload.mime_type,
         path: file_actions::file_path(&config.buckets_home_path, bucket_id, file_id),
-        name: file_name,
-        size: size,
+        name: upload.name,
+        size: file_size,
     };
 
     let mut tx  = match pg_pool.begin().await {
@@ -186,7 +219,7 @@ pub async fn create_file(
         Ok(file) => {
             let map: HashMap<String, Bytes> = HashMap::from([(
                 file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
-                bytes,
+                upload.bytes,
             )]);
 
             let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) =
@@ -226,35 +259,14 @@ pub async fn update_file(
     pg_pool: PgPool,
     bucket_id: Uuid,
     file_id: Uuid,
-    mut multipart: Multipart,
+    upload: FileUpload,
 ) -> impl IntoResponse {
     let config = Config::from_env();
-    let mut file_name = String::new();
-    let mut content_type = String::new();
-    let mut bytes = Bytes::new();
 
-    while let Ok(Some(field)) = multipart.next_field().await {
-        
-        if let Some(name) = field.file_name(){
-            file_name = name.to_string();
-        }
-
-        if let Some(mime) = field.content_type(){
-            content_type = mime.to_string();
-        }
-
-        let Ok(file_size) = field.bytes().await else {
-            return StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        };
-
-        bytes = file_size;
-    };
-
-    let file_size = bytes.len() as i64;
-
+    let file_size = upload.size();
     let file_update: FileUpdateModel = FileUpdateModel {
-        name: Some(file_name),
-        mime_type: Some(content_type),
+        name: Some(upload.name),
+        mime_type: Some(upload.mime_type),
         path: Some(file_actions::file_path(&config.buckets_home_path, bucket_id, file_id)),
         size: Some(file_size),
     };
@@ -276,7 +288,7 @@ pub async fn update_file(
         Ok(file) => {
             let map: HashMap<String, Bytes> = HashMap::from([(
                 file_actions::file_path(&config.buckets_home_path, bucket_id, file.id),
-                bytes,
+                upload.bytes,
             )]);
 
             let (_, failed_files): (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>) = file_actions::create_or_update_files(&map).await;

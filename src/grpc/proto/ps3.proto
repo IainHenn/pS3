@@ -3,7 +3,7 @@ package ps3;
 
 service Health {
   // health
-  rpc GetHealth (HealthyRequest) returns (HealthReply)
+  rpc GetHealth (HealthyRequest) returns (HealthReply);
 }
 
 message HealthyRequest {
@@ -29,30 +29,31 @@ service Files {
 
 // GetFileById Request and Reply
 message FileRequest {
-  string file_id = 1;
+  string bucket_id = 1;
+  string file_id = 2;
 }
 
 message FileReply {
-  FilesMetadata metadata = 1;
-  bytes content = 2;
-  string message = 3;
-  string error = 4;
+  bytes content = 1;
 }
 
 // GetFiles Request and Reply
 message FilesRequest {
-  string file_ids = 1; // query param, optional
+  string bucket_id = 1;
+  string file_ids = 2; // query param, optional
 }
 
 message FilesMetadata {
   string file_id = 1;
-  string bucket_id = 2;
-  string name = 3; 
-  string mime_type = 4;
-  int64 size = 5;
-  string path = 6;
-  string created_at = 7;
-  string updated_at = 8;
+  string message = 2;
+  string error = 3;
+  string bucket_id = 4;
+  string name = 5;
+  string mime_type = 6;
+  int64 size = 7;
+  string path = 8;
+  string created_at = 9;
+  string updated_at = 10;
 }
 
 message FilesReply {
@@ -181,4 +182,17 @@ message BucketDeleteReply {
 // DeleteBuckets Request and Reply
 message BucketDeletesRequest {
   string bucket_ids = 1;
+}
+
+message BucketsDeleteMetadata {
+  string bucket_id = 1;
+  repeated string deleted_files = 2;
+  string message = 3;
+  string error = 4;
+}
+
+message BucketsDeleteReply {
+  repeated BucketsDeleteMetadata buckets = 1;
+  string message = 2;
+  string error = 3;
 }

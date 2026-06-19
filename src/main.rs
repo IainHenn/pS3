@@ -1,17 +1,16 @@
 mod config;
 mod controllers;
+mod grpc;
 mod lib;
 mod models;
 mod repositories;
 mod router;
 mod services;
 
-use axum::Router;
 use sqlx::PgPool;
 use tokio::net::TcpListener;
 
 use crate::config::Config;
-
 
 #[tokio::main]
 async fn main() {
@@ -21,7 +20,7 @@ async fn main() {
         .await
         .expect("Failed to connect to the database!");
 
-    let app: Router = router::create_router(db_pool);
+    let app = router::create_router(db_pool.clone());
 
     let addr = format!("{}:{}", config.host, config.port);
     let listener = TcpListener::bind(&addr).await.unwrap();

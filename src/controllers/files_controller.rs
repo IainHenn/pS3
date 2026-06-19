@@ -1,8 +1,11 @@
-use axum::extract::{Multipart, Path, Query, State};
+use axum::body::Body;
+use axum::extract::{Path, Query, Request, State};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use sqlx::PgPool;
 use uuid::Uuid;
+use crate::lib::multipart;
 use crate::services::files_service as file;
 
 
@@ -48,19 +51,28 @@ pub async fn get_files(
 pub async fn create_file(
     State(pool): State<PgPool>,
     Path(bucket_id): Path<Uuid>,
-    multipart: Multipart,
+    request: Request<Body>,
 ) -> impl IntoResponse {
-    file::create_file(pool, bucket_id, multipart).await
+    let upload = match multipart::parse_file_upload_from_request(request).await {
+        Ok(upload) => upload,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    file::create_file(pool, bucket_id, upload).await.into_response()
 }
 
 // This is for updating a file that you have in a bucket --> PUT
 pub async fn update_file(
     State(pool): State<PgPool>,
     Path(path): Path<BucketFilePath>,
-    multipart: Multipart,
+    request: Request<Body>,
 ) -> impl IntoResponse {
+    let upload = match multipart::parse_file_upload_from_request(request).await {
+        Ok(upload) => upload,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
 
-    file::update_file(pool, path.bucket_id, path.file_id, multipart).await
+    file::update_file(pool, path.bucket_id, path.file_id, upload).await.into_response()
 }
 
 pub async fn move_file(
