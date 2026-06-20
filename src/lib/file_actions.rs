@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use axum::body::Bytes;
+use futures::future::join_all;
 use tokio::fs;
 use uuid::Uuid;
 
@@ -15,26 +16,41 @@ pub fn file_path(buckets_home_path: &str, bucket_id: Uuid, file_id: Uuid) -> Str
 // Takes in vector of file structs
 // Outputs the vector of file structs with newly updated paths
 // This function overwrites or creates the file at the given path
-pub async fn create_or_update_files(file_map: &HashMap<String, Bytes>) -> (HashMap<&String, &Bytes>, HashMap<&String, &Bytes>
+pub async fn create_or_update_files<'a>(
+    file_map: &'a HashMap<String, Bytes>,
+) -> (
+    HashMap<&'a String, &'a Bytes>,
+    HashMap<&'a String, &'a Bytes>,
 ) {
-    let mut succeeded_file_map: HashMap<&String, &Bytes> = HashMap::new();
-    let mut failed_file_map: HashMap<&String, &Bytes> = HashMap::new();
-    
-    for (path, bytes) in file_map {
+    let mut succeeded_file_map: HashMap<&'a String, &'a Bytes> = HashMap::new();
+    let mut failed_file_map: HashMap<&'a String, &'a Bytes> = HashMap::new();
+
+    async fn create_helper<'a>(path: &'a String, bytes: &'a Bytes) -> bool {
         if let Some(parent) = Path::new(path).parent() {
             if fs::create_dir_all(parent).await.is_err() {
-                failed_file_map.insert(path, bytes);
-                continue;
+                return false;
             }
         }
 
-        match fs::write(path, bytes).await {
-            Ok(_) => {succeeded_file_map.insert(path, bytes);},
-            Err(_) => {failed_file_map.insert(path, bytes);},
-        }
+        fs::write(path, bytes).await.is_ok()
     }
 
-    return (succeeded_file_map, failed_file_map);
+    let write_futures: Vec<_> = file_map
+        .iter()
+        .map(|(path, bytes)| create_helper(path, bytes))
+        .collect();
+
+    let results = join_all(write_futures).await;
+
+    for ((path, bytes), succeeded) in file_map.iter().zip(results) {
+        if succeeded {
+            succeeded_file_map.insert(path, bytes);
+        } else {
+            failed_file_map.insert(path, bytes);
+        }
+    }
+    
+    (succeeded_file_map, failed_file_map)
 }
 
 // Used for when we want to move a file from one directory to another (specifically when moving a file to another bucket)
