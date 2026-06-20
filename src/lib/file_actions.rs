@@ -3,7 +3,7 @@
 - To mitigate the total # of functions, going to make all functions to be batch
 */
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use axum::body::Bytes;
 use futures::future::join_all;
 use tokio::fs;
@@ -131,14 +131,32 @@ pub async fn delete_files_in_bucket(base_dir: &str, bucket_id: Uuid) -> Vec<Stri
         Err(_) => return deleted_files,
     };
 
+    let mut file_paths: Vec<(String, PathBuf)> = Vec::new();
     while let Ok(Some(entry)) = read_dir.next_entry().await {
-        let path = entry.path();
-        if fs::remove_file(&path).await.is_ok() {
-            deleted_files.push(entry.file_name().to_string_lossy().into_owned());
+        file_paths.push((
+            entry.file_name().to_string_lossy().into_owned(),
+            entry.path(),
+        ));
+    }
+
+    async fn delete_helper(path: PathBuf) -> bool {
+        fs::remove_file(&path).await.is_ok()
+    }
+
+    let delete_futures: Vec<_> = file_paths
+        .iter()
+        .map(|(_file_name, path)| delete_helper(path.clone()))
+        .collect();
+
+    let results = join_all(delete_futures).await;
+
+    for ((file_name, _path), result) in file_paths.iter().zip(results) {
+        if result {
+            deleted_files.push(file_name.clone());
         }
     }
 
     let _ = fs::remove_dir(&bucket_dir).await;
-   
-    return deleted_files
+
+    deleted_files
 }
