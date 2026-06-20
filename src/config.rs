@@ -6,6 +6,7 @@ pub struct Config {
     pub host: String,
     pub port: u16,
     pub buckets_home_path: String,
+    pub grpc_port: u16,
 }
 
 impl Config {
@@ -34,11 +35,17 @@ impl Config {
 
         let buckets_home_path = env::var("BUCKETS_HOME_PATH").unwrap_or_else(|_| "/c/Home".to_string());
 
+        let grpc_port = env::var("GRPC_PORT")
+            .unwrap_or_else(|_| "50051".to_string())
+            .parse()
+            .expect("GRPC_PORT must be a valid number");
+
         Self {
             database_url,
             host,
             port,
-            buckets_home_path
+            buckets_home_path,
+            grpc_port,
         }
     }
 }

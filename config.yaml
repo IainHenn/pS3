@@ -25,6 +25,7 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-3000}:3000"
+      - "${GRPC_PORT:-50051}:50051"
     env_file:
       - .env
     environment:

@@ -1,5 +1,9 @@
 FROM rust:1-bookworm AS builder
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends protobuf-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY .sqlx ./.sqlx
@@ -14,5 +18,5 @@ RUN apt-get update \
 
 COPY --from=builder /app/target/release/pS3 /usr/local/bin/ps3
 
-EXPOSE 3000
+EXPOSE 3000 50051
 CMD ["ps3"]

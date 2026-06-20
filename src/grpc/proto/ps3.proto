@@ -63,11 +63,13 @@ message FilesReply {
 }
 
 message FileDeleteRequest {
-  string file_id = 1;
+  string bucket_id = 1;
+  string file_id = 2;
 }
 
 message FilesDeleteRequest {
-  string file_ids = 1;
+  string bucket_id = 1;
+  string file_ids = 2;
 }
 
 message FileDeleteReply {
@@ -130,7 +132,7 @@ service Buckets {
   rpc CreateBucket(BucketCreateRequest) returns (BucketReply);
   rpc UpdateBucket(BucketUpdateRequest) returns (BucketReply);
   rpc DeleteBucket(BucketDeleteRequest) returns (BucketDeleteReply);
-  rpc DeleteBuckets(BucketDeleteRequest) returns (BucketsDeleteReply);
+  rpc DeleteBuckets(BucketDeletesRequest) returns (BucketsDeleteReply);
 }
 
 // GetBucket Request and Reply
@@ -164,7 +166,8 @@ message BucketCreateRequest {
 
 // UpdateBucket Request
 message BucketUpdateRequest {
-  string bucket_name = 1;
+  string bucket_id = 1;
+  string bucket_name = 2;
 }
 
 // DeleteBucket Request and Reply

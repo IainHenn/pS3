@@ -60,7 +60,6 @@ pub async fn get_files(
         SELECT id, bucket_id, name, mime_type, size, path, created_at, updated_at
         FROM files
         WHERE id = ANY($1) AND bucket_id = $2
-        ORDER BY created_at ASC
         "#,
         file_ids as &[Uuid],
         bucket_id,
