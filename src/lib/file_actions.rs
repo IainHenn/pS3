@@ -49,7 +49,7 @@ pub async fn create_or_update_files<'a>(
             failed_file_map.insert(path, bytes);
         }
     }
-    
+
     (succeeded_file_map, failed_file_map)
 }
 
@@ -82,10 +82,22 @@ pub async fn delete_files(file_paths: HashMap<String, String>) -> (Vec<String>, 
     let mut deleted_files = Vec::new();
     let mut failed_files = Vec::new();
 
-    for (file_id, path) in file_paths {
-        match fs::remove_file(&path).await {
-            Ok(_) => deleted_files.push(file_id),
-            Err(_) => failed_files.push(file_id),
+    async fn delete_helper(path: &String) -> bool {
+        fs::remove_file(&path).await.is_ok()
+    }
+
+    let delete_futures: Vec<_> = file_paths
+        .iter()
+        .map(|(_file_id, path)| delete_helper(path))
+        .collect();
+
+    let results = join_all(delete_futures).await;
+
+    for ((file_id, _path), result) in file_paths.iter().zip(results){
+        if result {
+            deleted_files.push(file_id.clone());
+        } else {
+            failed_files.push(file_id.clone());
         }
     }
 
